@@ -1,0 +1,197 @@
+---
+title: "Milestone 2"
+author: "Naomi Cutler"
+date: 2026-11-04
+format: pdf
+editor: visual
+bibliography: final_bib.bib
+execute:
+  echo: true #includes all source code in the output
+  output: true #includes text results and figures
+  warning: false #does not include warnings
+  message: false #does not include messages
+---
+
+As a reminder, I am planning to use the CAL FIRE Damage Inspection (DINS) dataset to answer the question: what roof type is associated with the most damage from wildfires? Previous research has illuminated the disproportionate impact of combustible roofs on structure loss rates [@collins] .
+
+Since the DINS dataset does have information about where the fire started, I will filter these records out to do my analysis. However, I am speculating that firefighters are only able to tell where the fire started in certain cases (like when some of the structure is still standing. Therefore, I plan to also look at the full dataset and see which roof type is associated with the most damage, though I recognize there are many factors that may confound this relationship.
+
+```{r}
+#Load in libraries
+library(tidyverse)
+library(janitor)
+library(ggplot2)
+```
+
+```{r}
+#Read in data
+dins = read.csv("data/raw_calfire_dins.csv")
+```
+
+```{r}
+#Clean the data
+
+# Make the column names easier to type
+dins_clean <-
+  clean_names(dins)
+
+dins_select <-
+  dins_clean |>
+  select(
+    x_damage,
+    x_roof_construction,
+    x_incident_name,
+    if_affected_where_did_fire_start,
+    latitude,
+    longitude
+  )
+
+dins_select <-
+  dins_select |>
+  rename(
+    damage = x_damage,
+    roof_construction = x_roof_construction,
+    incident_name = x_incident_name,
+    fire_start = if_affected_where_did_fire_start
+  )
+
+```
+
+```{r}
+#Exploratory Data Analysis
+
+head(dins_select)
+tail(dins_select)
+summary(dins_select)
+glimpse(dins_select)
+slice(dins_select)
+
+#check if the columns are characters
+is.character(dins_select$damage)
+
+is.character(dins_select$roof_construction)
+
+#identify what the unique values are in each column
+unique(dins_select$damage)
+
+unique(dins_select$roof_construction)
+
+#Visualize on a graph
+ggplot(dins_select, (aes(x = roof_construction))) +
+  geom_bar(fill = "slategrey", color = "black") +
+  labs(
+    title = "Distribution of Roof Types",
+    x = "Roof Construction Type",
+    y = "Count"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplot(dins_select, (aes(x = damage))) +
+  geom_bar(fill = "firebrick", color = "black") +
+  labs(
+    title = "Distribution of Damage Levels",
+    x = "Damage Level",
+    y = "Count"
+  ) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+```
+
+I am noting that there are quite a few empty roof types, but there is also an unknown category. So I will impute the blank ones as Unknown.
+
+```{r}
+#Impute values with na or blank as Unknown
+dins_select <- dins_select |>
+  mutate(roof_construction = if_else(is.na(roof_construction) | roof_construction == "" | roof_construction == " ", "Unknown", as.character(roof_construction)))
+
+#Check if that worked
+unique(dins_select$roof_construction)
+```
+
+```{r}
+#Create counts table
+roof_counts <- table(dins_select$roof_construction, dins_select$damage)
+
+#turn it into a df
+roof_df <- as.data.frame.matrix(roof_counts)
+
+
+#compute totals for each category
+roof_total <- roof_df |> 
+  rownames_to_column(var = "roof_construction") |> 
+  adorn_totals(where = c("row", "col"))
+```
+
+```{r}
+#More EDA
+head(roof_df)
+
+tail(roof_df)
+
+glimpse(roof_df)
+
+#slice is irrelevant because I have so few lines
+
+#summary doesn't mean much because it 
+
+min(roof_df$`Destroyed (>50%)`)
+max(roof_df$`Destroyed (>50%)`)
+```
+
+```{r}
+#Create a subset of instances where the fire started on the roof 
+dins_roof <- 
+  dins_select|>
+  filter(fire_start == "Roof")
+
+#Create counts table for just fires on roof
+subset_counts <- table(dins_roof$roof_construction, dins_roof$damage)
+
+#turn it into a df
+subset_df <- as.data.frame.matrix(subset_counts)
+
+
+#compute totals for each category
+subset_total <- subset_df |> 
+  rownames_to_column(var = "roof_construction") |> 
+  adorn_totals(where = c("row", "col"))
+```
+
+```{r}
+#More EDA
+#Visualize how many roofs of each type in the destroyed category
+
+plot_data <- roof_total |> 
+  filter(roof_construction != "Total")
+
+ggplot(plot_data, aes(x = reorder(roof_construction, -`Destroyed (>50%)`), y = `Destroyed (>50%)`)) +
+  geom_col(fill = "firebrick", color = "black") +
+  labs(
+    title = "Number of Destroyed Structures (>50%) by Roof Type",
+    x = "Roof Construction Type",
+    y = "Number of Structures Destroyed"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+```{r}
+#Now I am just trynig out a map for fun! I will need to work on this much more...
+ggplot(dins_roof, aes(x = longitude, y = latitude)) +
+  geom_point(aes(color = damage, shape = roof_construction), alpha = 0.7, size = 2) +
+  scale_color_brewer(palette = "Set1") + # Easy distinct color palette
+  labs(
+    title = "CAL FIRE DINS Structure Locations",
+    subtitle = "Analysis of Damage Levels and Roof Types",
+    x = "Longitude",
+    y = "Latitude",
+    color = "Damage Level",
+    shape = "Roof Type"
+  ) +
+  theme_minimal()
+```
+
+# Notes
+
+I am very surprised to see that 87% of fire resistant roofs ended up in the \>50% destroyed category. Notably, that is for the full dataset, not just for the roof subset. When I subsetted out the houses where the fire started on the roof I am seeing that fire resistant is not present in the data. So, this could mean that houses that had fire resistant roofs had fires that started somewhere else in the building.
+
+# References
